@@ -1,1 +1,35 @@
-lagay naten dito ang database details fles
+CREATE DATABASE IF NOT EXISTS LibraryDb;
+USE LibraryDb;
+
+-- Create the users table
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL
+);
+
+-- Create the books table
+CREATE TABLE IF NOT EXISTS books (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    author VARCHAR(255) NOT NULL
+);
+
+-- Create the borrowed_books table
+CREATE TABLE IF NOT EXISTS borrowed_books (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(100) NOT NULL,
+    book_id INT NOT NULL,
+    book_title VARCHAR(255) NOT NULL,
+    due_date DATE NOT NULL,
+    FOREIGN KEY (username) REFERENCES users(username),
+    FOREIGN KEY (book_id) REFERENCES books(id)
+);
+
+
+INSERT INTO books (title, author) VALUES
+('To Kill a Mockingbird', 'Harper Lee'),
+('1984', 'George Orwell'),
+('The Great Gatsby', 'F. Scott Fitzgerald'),
+('Pride and Prejudice', 'Jane Austen'),
+('The Hobbit', 'J.R.R. Tolkien');
