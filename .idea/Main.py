@@ -4,11 +4,10 @@ import mysql.connector
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton,
     QMessageBox, QStackedWidget, QLabel, QHBoxLayout, QCheckBox,
-    QMainWindow, QFrame, QSizePolicy, QScrollArea
+    QMainWindow
 )
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt
-from datetime import datetime, timedelta
 
 
 def get_db_connection():
@@ -34,8 +33,6 @@ class SignupPage(QWidget):
         self.main_window = main_window
 
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
-
         form_container = QWidget()
         form_layout = QVBoxLayout(form_container)
         form_layout.setContentsMargins(40, 40, 40, 40)
@@ -78,7 +75,6 @@ class SignupPage(QWidget):
         main_layout.addStretch(1)
         main_layout.addLayout(h_layout)
         main_layout.addStretch(1)
-
         self.setLayout(main_layout)
 
     def toggle_password_visibility(self):
@@ -119,14 +115,13 @@ class SignupPage(QWidget):
             cursor.close()
             conn.close()
 
+
 class LoginPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
 
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
-
         form_container = QWidget()
         form_layout = QVBoxLayout(form_container)
         form_layout.setContentsMargins(40, 40, 40, 40)
@@ -189,62 +184,12 @@ class LoginPage(QWidget):
             QMessageBox.information(self, "Success", "Login successful!")
             self.username.clear()
             self.password.clear()
-            self.main_window.show_dashboard(user)
+            self.main_window.Main_screen()
         else:
             QMessageBox.warning(self, "Error", "Invalid credentials.")
 
         cursor.close()
         conn.close()
-
-
-class LibraryPanel(QFrame):
-    def __init__(self):
-        super().__init__()
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setStyleSheet("background-color: white;")
-
-        layout = QVBoxLayout()
-        label = QLabel("Welcome to the Library System")
-        label.setFont(QFont("Arial", 14))
-        layout.addWidget(label)
-        self.setLayout(layout)
-
-
-class DashboardPanel(QFrame):
-    def __init__(self, username):
-        super().__init__()
-        self.username = username
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setStyleSheet("background-color: white;")
-
-        layout = QVBoxLayout()
-        welcome_label = QLabel(f"Welcome, {self.username}!")
-        welcome_label.setFont(QFont("Arial", 14))
-        layout.addWidget(welcome_label)
-
-        borrowed_books_label = QLabel("Borrowed Books:")
-        borrowed_books_label.setFont(QFont("Arial", 12, QFont.Bold))
-        layout.addWidget(borrowed_books_label)
-
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        scroll_content = QWidget()
-        self.scroll_layout = QVBoxLayout(scroll_content)
-
-        # Example data
-        books = [
-            {"title": "Python Basics", "due_date": datetime.now() + timedelta(days=3)},
-            {"title": "Data Science 101", "due_date": datetime.now() + timedelta(days=7)},
-        ]
-
-        for book in books:
-            book_label = QLabel(f"{book['title']} - Due: {book['due_date'].strftime('%Y-%m-%d')}")
-            self.scroll_layout.addWidget(book_label)
-
-        self.scroll_area.setWidget(scroll_content)
-        layout.addWidget(self.scroll_area)
-
-        self.setLayout(layout)
 
 
 class MainWindow(QMainWindow):
@@ -258,20 +203,82 @@ class MainWindow(QMainWindow):
 
         self.login_page = LoginPage(self)
         self.signup_page = SignupPage(self)
+        self.blank_screen = QWidget()
+        self.blank_screen.setStyleSheet("background-color: white;")
 
         self.stack.addWidget(self.login_page)
         self.stack.addWidget(self.signup_page)
+        self.stack.addWidget(self.blank_screen)
 
     def show_login(self):
         self.stack.setCurrentWidget(self.login_page)
 
     def show_signup(self):
         self.stack.setCurrentWidget(self.signup_page)
+    def logout_clicked(self):
+        self.stack.setCurrentWidget(self.login_page)
+        self.showNormal()
+        QMessageBox.information(self, "Success", "Logout successful!")
+    def get_borrowed_books(self, username):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+          SELECT book_title, due_date 
+          FROM borrowed_books 
+          WHERE username = %s
+        """, (username,))
+        books = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return books
 
-    def show_dashboard(self, username):
-        self.dashboard = DashboardPanel(username)
-        self.stack.addWidget(self.dashboard)
-        self.stack.setCurrentWidget(self.dashboard)
+
+
+    def Main_screen(self):
+    # Create the left panel (sidebar)
+        left_panel = QWidget()
+        left_panel.setStyleSheet("background-color: #2c3e50;")  # Dark blue-gray
+        left_panel.setFixedWidth(200)
+
+    # Add optional content to the sidebar (e.g., buttons)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(50)
+
+        btn1 = QPushButton("Home")
+
+        btn2 = QPushButton("My Books")
+
+        btn3 = QPushButton("Settings")
+
+        btn4 = QPushButton("Logout")
+        btn4.clicked.connect(self.logout_clicked)
+
+        for btn in [btn1, btn2, btn3, btn4]:
+          btn.setStyleSheet("color: white; background-color: #34495e; padding: 10px; border: none;")
+          btn.setCursor(Qt.PointingHandCursor)
+          left_layout.addWidget(btn)
+
+        left_layout.addStretch()
+        left_layout.addWidget(btn4)
+
+    # Create the main area (right side)
+        right_panel = QWidget()
+        right_panel.setStyleSheet("background-color: white;")
+
+    # Combine both into one layout
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(left_panel)
+        layout.addWidget(right_panel)
+
+    # Show as full screen
+        self.stack.addWidget(container)
+        self.stack.setCurrentWidget(container)
+        self.showMaximized()
+
+
 
 
 if __name__ == "__main__":
@@ -279,4 +286,3 @@ if __name__ == "__main__":
     main_window = MainWindow()
     main_window.show()
     sys.exit(app.exec_())
-
