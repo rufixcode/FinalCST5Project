@@ -33,3 +33,9 @@ INSERT INTO books (title, author) VALUES
 ('The Great Gatsby', 'F. Scott Fitzgerald'),
 ('Pride and Prejudice', 'Jane Austen'),
 ('The Hobbit', 'J.R.R. Tolkien');
+
+MariaDB [librarydb]> CREATE TABLE admins (
+    ->     adminid INT(11) AUTO_INCREMENT PRIMARY KEY,
+    ->     username VARCHAR(100) NOT NULL UNIQUE,
+    ->     password VARCHAR(100) NOT NULL
+    -> );
