@@ -13,10 +13,10 @@ from PyQt5.QtCore import Qt
 
 def get_db_connection():
     return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="",
-        database="LibraryDb"
+        host="185.207.164.104",
+        user="u402_UbM8SlrpnR",
+        password="FjIcvcZ+CCu0VwKPrm^OBDOL",
+        database="s402_RuffieMare"
     )
 
 
