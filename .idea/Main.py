@@ -306,7 +306,7 @@ class MainWindow(QMainWindow):
 
         if books:
             book_counter = 0
-            row_limit = 3  # Number of books per row
+            row_limit = 5  # Number of books per row
 
             for book_id, book_title, author in books:
                 # Create book card
@@ -427,6 +427,19 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Success", "Logout successful!")
 
     def borrow_book(self, book_id, book_title):
+        # Use C# app to check if the book is already borrowed
+        try:
+            output = subprocess.check_output(["CheckBookAvailability.exe", str(book_id)], shell=True)
+            status = output.decode("utf-8").strip()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to check availability: {e}")
+            return
+
+        if status == "Borrowed":
+            QMessageBox.information(self, "Unavailable", f"'{book_title}' is already borrowed.")
+            return
+
+        # Proceed with borrowing
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
@@ -437,12 +450,13 @@ class MainWindow(QMainWindow):
             """, (self.current_user, book_id, book_title, due_date))
             conn.commit()
             QMessageBox.information(self, "Success", f"You borrowed '{book_title}'. Due on {due_date}.")
-            self.show_home()  # Refresh the list
+            self.show_home()
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
         finally:
             cursor.close()
             conn.close()
+
 
     def show_borrowed_books(self):
      try:
