@@ -1,6 +1,7 @@
 import sys
 import bcrypt
 import mysql.connector
+import subprocess
 from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton,
@@ -427,7 +428,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Success", "Logout successful!")
 
     def borrow_book(self, book_id, book_title):
-        # Use C# app to check if the book is already borrowed
+
         try:
             output = subprocess.check_output(["CheckBookAvailability.exe", str(book_id)], shell=True)
             status = output.decode("utf-8").strip()
@@ -459,93 +460,95 @@ class MainWindow(QMainWindow):
 
 
     def show_borrowed_books(self):
-     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT book_title, due_date FROM borrowed_books
-            WHERE username = %s
-        """, (self.current_user,))
-        books = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT book_title, due_date FROM borrowed_books
+                WHERE username = %s
+            """, (self.current_user,))
+            books = cursor.fetchall()
+            cursor.close()
+            conn.close()
 
-        book_panel = QWidget()
-        layout = QVBoxLayout(book_panel)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
+            book_panel = QWidget()
+            layout = QVBoxLayout(book_panel)
+            layout.setContentsMargins(30, 30, 30, 30)
+            layout.setSpacing(20)
 
-        # Header
-        header = QLabel("📚 Borrowed Books")
-        header.setFont(QFont("Georgia", 22, QFont.Bold))
-        header.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
-        header.setAlignment(Qt.AlignLeft)
-        layout.addWidget(header)
+            # Header
+            header = QLabel("📚 Borrowed Books")
+            header.setFont(QFont("Georgia", 22, QFont.Bold))
+            header.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
+            layout.addWidget(header)
 
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setSpacing(15)
+            # Scroll Area
+            scroll_area = QScrollArea()
+            scroll_area.setWidgetResizable(True)
+            scroll_area.setStyleSheet("border: none;")
 
+            scroll_content = QWidget()
+            scroll_layout = QVBoxLayout(scroll_content)
+            scroll_layout.setSpacing(15)
+            scroll_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Book List
-        if books:
-            for title, due_date in books:
-                card = QWidget()
-                card_layout = QHBoxLayout(card)
-                card_layout.setContentsMargins(15, 10, 15, 10)
-                card_layout.setSpacing(20)
+            # Book Cards
+            if books:
+                for title, due_date in books:
+                    card = QFrame()
+                    card.setStyleSheet("""
+                        QFrame {
+                            background-color: #ffffff;
+                            border-radius: 10px;
+                            border: 1px solid #dcdcdc;
+                            padding: 12px;
+                        }
+                    """)
+                    card_layout = QHBoxLayout(card)
+                    card_layout.setContentsMargins(10, 5, 10, 5)
+                    card_layout.setSpacing(15)
 
-                icon = QLabel("📖")
-                icon.setFont(QFont("Arial", 20))
-                icon.setFixedWidth(40)
+                    icon = QLabel("📖")
+                    icon.setFont(QFont("Arial", 20))
+                    icon.setFixedWidth(40)
 
-                title_label = QLabel(title)
-                title_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
+                    info_layout = QVBoxLayout()
+                    title_label = QLabel(title)
+                    title_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+                    due_label = QLabel(f"Due: {due_date}")
+                    due_label.setFont(QFont("Segoe UI", 9))
+                    due_label.setStyleSheet("color: #e67e22;")
 
+                    info_layout.addWidget(title_label)
+                    info_layout.addWidget(due_label)
 
-                due_label = QLabel(f"Due: {due_date}")
-                due_label.setFont(QFont("Segoe UI", 10))
-                due_label.setStyleSheet("color: #e67e22;")
+                    card_layout.addWidget(icon)
+                    card_layout.addLayout(info_layout)
+                    card_layout.addStretch()
 
-                card_layout.addWidget(icon)
-                card_layout.addWidget(title_label)
-                card_layout.addStretch()
-                card_layout.addWidget(due_label)
+                    scroll_layout.addWidget(card)
+            else:
+                empty_msg = QLabel("You haven’t borrowed any books yet.\nExplore the catalog and start reading!")
+                empty_msg.setFont(QFont("Segoe UI", 12))
+                empty_msg.setAlignment(Qt.AlignCenter)
+                empty_msg.setStyleSheet("color: #7f8c8d; padding: 40px;")
+                scroll_layout.addWidget(empty_msg)
 
-                card.setStyleSheet("""
-                background-color: #ffffff;
-                border-radius: 10px;
-                border: 1px solid #dcdcdc;
-                box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
-            """)
+            scroll_content.setLayout(scroll_layout)
+            scroll_area.setWidget(scroll_content)
+            layout.addWidget(scroll_area)
 
-                scroll_layout.addWidget(card)
+            # Replace existing panel
+            if self.main_panel_layout is not None:
+                for i in reversed(range(self.main_panel_layout.count())):
+                    widget = self.main_panel_layout.itemAt(i).widget()
+                    if widget:
+                        widget.setParent(None)
 
+            self.main_panel_layout.addWidget(book_panel)
+        except Exception as e:
+            print(f"[error] failed to show books : {e}")
 
-
-
-        else:
-            empty_msg = QLabel("You haven’t borrowed any books yet.\nExplore the catalog and start reading!")
-            empty_msg.setFont(QFont("Segoe UI", 12))
-            empty_msg.setAlignment(Qt.AlignCenter)
-            empty_msg.setStyleSheet("color: #7f8c8d; padding: 40px;")
-            scroll_layout.addWidget(empty_msg)
-
-        scroll_content.setLayout(scroll_layout)
-        scroll_area.setWidget(scroll_content)
-        layout.addWidget(scroll_area)
-
-        if self.main_panel_layout is not None:
-            for i in reversed(range(self.main_panel_layout.count())):
-                widget = self.main_panel_layout.itemAt(i).widget()
-                if widget:
-                    widget.setParent(None)
-
-        self.main_panel_layout.addWidget(book_panel)
-     except Exception as e:
-         print(f"[error] failed to show books : {e}")
 
     def get_borrowed_books(self, username):
         conn = get_db_connection()
