@@ -566,6 +566,11 @@ class AdminDashboard(QWidget):
         cursor.close()
         conn.close()
         
+        cursor.execute("SELECT DISTINCT book_id FROM borrowed_books")
+        borrowed_ids = set(row[0] for row in cursor.fetchall())
+        cursor.close()
+        conn.close()
+        
         headers = ["ID", "Title", "Author", "Available", "Actions"]
         self.table.setRowCount(len(data))
         self.table.setColumnCount(len(headers))
@@ -669,6 +674,7 @@ class AdminDashboard(QWidget):
             
             QMessageBox.information(self, "Success", "Book deleted successfully!")
             self.view_all_books()
+            
 
     def view_members(self):
         self.page_title.setText("Library Members")
