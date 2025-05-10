@@ -11,6 +11,10 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QFont, QColor, QPalette, QIcon
 from PyQt5.QtCore import Qt, QDate
 from datetime import datetime, timedelta
+from functools import partial
+from PyQt5.QtGui import QRegExpValidator
+from PyQt5.QtCore import QRegExp
+from PyQt5.QtCore import QTimer
 
 # Consistent styling
 BUTTON_STYLE = """
@@ -56,6 +60,8 @@ class BookDialog(QDialog):
         
         self.title_edit = QLineEdit()
         self.author_edit = QLineEdit()
+
+
         self.available_check = QCheckBox("Available")
         self.available_check.setChecked(True)
         
@@ -282,10 +288,13 @@ class AdminLogin(QWidget):
         cursor.execute("SELECT adminid, password FROM admins WHERE username=%s", (user,))
         result = cursor.fetchone()
 
-        if result and bcrypt.checkpw(pwd.encode(), result[1].encode()):
+        if result and result[1] and bcrypt.checkpw(pwd.encode(), result[1].encode()):
             self.admin_window.current_admin_id = result[0]
             self.admin_window.current_admin_username = user
             self.admin_window.show_dashboard()
+            QTimer.singleShot(0, self.admin_window.show_dashboard)
+            print("Login attempt for:", user)
+            print("DB hash:", result[1])
         else:
             QMessageBox.warning(self, "Error", "Invalid admin credentials.")
 
@@ -315,12 +324,14 @@ class AdminDashboard(QWidget):
         }
 
         for name, method in buttons.items():
+            if name == "Manage Admins":
+                self.sidebar.addStretch()
+
+
             btn = QPushButton(name)
             btn.clicked.connect(method)
             btn.setFixedHeight(40)
             btn.setStyleSheet(BUTTON_STYLE)
-            if name in ["Manage Admins", "Logout"]:
-                self.sidebar.addStretch()
             self.sidebar.addWidget(btn)
 
         sidebar_widget = QFrame()
@@ -366,15 +377,20 @@ class AdminDashboard(QWidget):
             item = self.action_buttons.takeAt(0)
             widget = item.widget()
             if widget:
+                widget.setParent(None)
                 widget.deleteLater()
 
     def display_table(self, data, headers):
+        self.table.setSortingEnabled(False)
+        self.table.clearContents()
         self.table.setRowCount(len(data))
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
+
         for i, row in enumerate(data):
             for j, val in enumerate(row):
                 self.table.setItem(i, j, QTableWidgetItem(str(val)))
+
         self.table.resizeColumnsToContents()
         self.table.resizeRowsToContents()
         self.table.setSortingEnabled(True)
@@ -391,50 +407,69 @@ class AdminDashboard(QWidget):
         conn.close()
         
         headers = ["ID", "User", "Book ID", "Book Title", "Due Date", "Actions"]
+        self.table.setSortingEnabled(False)
+        self.table.clearContents()
         self.table.setRowCount(len(data))
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
+
         
         for i, row in enumerate(data):
             for j in range(5):
                 self.table.setItem(i, j, QTableWidgetItem(str(row[j])))
-            
-            # Add action buttons
-            action_layout = QHBoxLayout()
+
+            from functools import partial
             
             edit_btn = QPushButton("Edit")
             edit_btn.setStyleSheet(BUTTON_STYLE)
-            edit_btn.clicked.connect(lambda _, idx=i, data=row: self.edit_borrowed_book(data))
+            edit_btn.clicked.connect(partial(self.edit_borrowed_book, row))
             
             return_btn = QPushButton("Return")
             return_btn.setStyleSheet(BUTTON_STYLE)
-            return_btn.clicked.connect(lambda _, idx=i, id=row[0]: self.return_book(id))
-            
+            return_btn.clicked.connect(partial(self.return_book, row[0]))
+
+            action_widget = QWidget(self.table)
+            action_layout = QHBoxLayout(action_widget)
+            action_layout.setContentsMargins(0, 0, 0, 0)
             action_layout.addWidget(edit_btn)
             action_layout.addWidget(return_btn)
-            
-            action_widget = QWidget()
             action_widget.setLayout(action_layout)
+
             self.table.setCellWidget(i, 5, action_widget)
+
+            self.table.resizeColumnsToContents()
+            self.table.resizeRowsToContents()
+            self.table.setSortingEnabled(True)
+            
+
     
     def edit_borrowed_book(self, data):
         dialog = BorrowedBookDialog(self, data)
+
         if dialog.exec_() == QDialog.Accepted:
             borrowed_data = dialog.get_borrowed_data()
-            
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE borrowed_books SET due_date = %s WHERE id = %s",
-                (borrowed_data['due_date'], data[0])
-            )
-            conn.commit()
-            cursor.close()
-            conn.close()
-            
-            QMessageBox.information(self, "Success", "Borrowed book updated successfully!")
-            self.view_borrowed()
-    
+
+            try:
+
+              with get_db_connection() as conn:
+                  cursor = conn.cursor()
+                  cursor.execute(
+                   "UPDATE borrowed_books SET due_date = %s WHERE id = %s",
+                    (borrowed_data['due_date'], data[0])
+                  )
+                  conn.commit()
+
+
+
+              QMessageBox.information(self, "Success", "Borrowed book updated successfully!")
+              self.view_borrowed()
+            except Exception as e:
+              QMessageBox.critical(self, "Error", f"Failed to update borrowed book: {e}")
+
+
+
+
+
     def return_book(self, borrow_id):
         reply = QMessageBox.question(
             self, "Confirm Return", 
@@ -466,55 +501,64 @@ class AdminDashboard(QWidget):
     def view_overdue(self):
         self.page_title.setText("Overdue Books")
         self.clear_action_buttons()
-        
-        today = datetime.today().strftime('%Y-%m-%d')
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT id, username, book_id, book_title, due_date FROM borrowed_books WHERE due_date < %s", 
-            (today,)
-        )
-        data = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        headers = ["ID", "User", "Book ID", "Overdue Book", "Due Date", "Days Overdue", "Est. Penalty", "Actions"]
-        self.table.setRowCount(len(data))
-        self.table.setColumnCount(len(headers))
-        self.table.setHorizontalHeaderLabels(headers)
-        
-        today_date = datetime.today()
-        
-        for i, row in enumerate(data):
-            for j in range(5):
-                self.table.setItem(i, j, QTableWidgetItem(str(row[j])))
-            
-            # Calculate days overdue
-            due_date = datetime.strptime(str(row[4]), "%Y-%m-%d")
-            days_overdue = (today_date - due_date).days
-            self.table.setItem(i, 5, QTableWidgetItem(str(days_overdue)))
-            
-            # Calculate penalty ($0.50 per day)
-            penalty = days_overdue * 0.5
-            self.table.setItem(i, 6, QTableWidgetItem(f"${penalty:.2f}"))
-            
-            # Add action buttons
-            action_layout = QHBoxLayout()
-            
-            edit_btn = QPushButton("Edit")
-            edit_btn.setStyleSheet(BUTTON_STYLE)
-            edit_btn.clicked.connect(lambda _, idx=i, data=row: self.edit_borrowed_book(data))
-            
-            collect_btn = QPushButton("Collect & Return")
-            collect_btn.setStyleSheet(BUTTON_STYLE)
-            collect_btn.clicked.connect(lambda _, idx=i, id=row[0], penalty=penalty: self.collect_and_return(id, penalty))
-            
-            action_layout.addWidget(edit_btn)
-            action_layout.addWidget(collect_btn)
-            
-            action_widget = QWidget()
-            action_widget.setLayout(action_layout)
-            self.table.setCellWidget(i, 7, action_widget)
+
+        try:
+            today = datetime.today().strftime('%Y-%m-%d')
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, username, book_id, book_title, due_date FROM borrowed_books WHERE due_date < %s",
+                (today,)
+            )
+            data = cursor.fetchall()
+            cursor.close()
+            conn.close()
+
+            headers = ["ID", "User", "Book ID", "Overdue Book", "Due Date", "Days Overdue", "Est. Penalty", "Actions"]
+            self.table.setSortingEnabled(False)
+            self.table.clearContents()
+            self.table.setRowCount(len(data))
+            self.table.setColumnCount(len(headers))
+            self.table.setHorizontalHeaderLabels(headers)
+
+            today_date = datetime.today()
+
+            for i, row in enumerate(data):
+                for j in range(5):
+                    self.table.setItem(i, j, QTableWidgetItem(str(row[j])))
+
+                # Calculate days overdue
+                due_date = datetime.strptime(str(row[4]), "%Y-%m-%d")
+                days_overdue = (today_date - due_date).days
+                self.table.setItem(i, 5, QTableWidgetItem(str(days_overdue)))
+
+                # Calculate penalty ($0.50 per day)
+                penalty = days_overdue * 0.5
+                self.table.setItem(i, 6, QTableWidgetItem(f"${penalty:.2f}"))
+
+                # Add action buttons
+                edit_btn = QPushButton("Edit")
+                edit_btn.setStyleSheet(BUTTON_STYLE)
+                edit_btn.clicked.connect(partial(self.edit_borrowed_book, row))
+
+                collect_btn = QPushButton("Collect & Return")
+                collect_btn.setStyleSheet(BUTTON_STYLE)
+                collect_btn.clicked.connect(partial(self.collect_and_return, row[0], penalty))
+
+                action_widget = QWidget()
+                action_layout = QHBoxLayout(action_widget)
+                action_layout.setContentsMargins(0, 0, 0, 0)
+                action_layout.addWidget(edit_btn)
+                action_layout.addWidget(collect_btn)
+                action_widget.setLayout(action_layout)
+
+                self.table.setCellWidget(i, 7, action_widget)
+
+            self.table.resizeColumnsToContents()
+            self.table.resizeRowsToContents()
+            self.table.setSortingEnabled(True)
+        except mysql.connector.Error as e:
+            QMessageBox.critical(self, "Database Error", f"Error displaying overdue books: {e}")
     
     def collect_and_return(self, borrow_id, penalty):
         reply = QMessageBox.question(
@@ -563,8 +607,6 @@ class AdminDashboard(QWidget):
         cursor = conn.cursor()
         cursor.execute("SELECT id, title, author, available FROM books")
         data = cursor.fetchall()
-        cursor.close()
-        conn.close()
         
         cursor.execute("SELECT DISTINCT book_id FROM borrowed_books")
         borrowed_ids = set(row[0] for row in cursor.fetchall())

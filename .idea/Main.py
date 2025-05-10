@@ -445,6 +445,7 @@ class MainWindow(QMainWindow):
             conn.close()
 
     def show_borrowed_books(self):
+     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -465,7 +466,7 @@ class MainWindow(QMainWindow):
         header.setFont(QFont("Georgia", 22, QFont.Bold))
         header.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
         header.setAlignment(Qt.AlignLeft)
-        main_layout.addWidget(header)
+        layout.addWidget(header)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -489,10 +490,6 @@ class MainWindow(QMainWindow):
                 title_label = QLabel(title)
                 title_label.setFont(QFont("Segoe UI", 12, QFont.Bold))
 
-
-                due_label = QLabel(f"Due: {due_date}")
-                due_label.setFont(QFont("Segoe UI", 10))
-                due_label.setStyleSheet("color: #e67e22;")
 
                 due_label = QLabel(f"Due: {due_date}")
                 due_label.setFont(QFont("Segoe UI", 10))
@@ -524,16 +521,17 @@ class MainWindow(QMainWindow):
 
         scroll_content.setLayout(scroll_layout)
         scroll_area.setWidget(scroll_content)
-        main_layout.addWidget(scroll_area)
+        layout.addWidget(scroll_area)
 
-        if self.main_panel_layout is not none:
+        if self.main_panel_layout is not None:
             for i in reversed(range(self.main_panel_layout.count())):
                 widget = self.main_panel_layout.itemAt(i).widget()
                 if widget:
                     widget.setParent(None)
 
         self.main_panel_layout.addWidget(book_panel)
-
+     except Exception as e:
+         print(f"[error] failed to show books : {e}")
 
     def get_borrowed_books(self, username):
         conn = get_db_connection()
