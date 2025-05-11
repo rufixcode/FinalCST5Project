@@ -6,10 +6,11 @@ from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton,
     QMessageBox, QStackedWidget, QLabel, QHBoxLayout, QCheckBox,
-    QMainWindow, QScrollArea, QFrame, QSizePolicy
+    QMainWindow, QScrollArea, QFrame, QSizePolicy, QGridLayout
 )
 from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize
+
 
 
 
@@ -244,6 +245,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.blank_screen)
 
     def show_home(self):
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id, title, author FROM books WHERE id NOT IN (SELECT book_id FROM borrowed_books)")
@@ -251,31 +253,35 @@ class MainWindow(QMainWindow):
         cursor.close()
         conn.close()
 
+        
         home_panel = QWidget()
         main_layout = QVBoxLayout(home_panel)
         main_layout.setContentsMargins(30, 30, 30, 30)
-        main_layout.setSpacing(25)
+        main_layout.setSpacing(15)
 
-        # Header section with search bar
+        # Header
         header_container = QWidget()
-        header_container.setStyleSheet("background-color: #f5f5f5; border-radius: 12px; padding: 10px;")
         header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_container.setStyleSheet("background-color: #f5f5f5; border-radius: 10px; padding: 12px;")
 
-        title = QLabel("Library Catalog")
+        title = QLabel("📚 Library Catalog")
         title.setFont(QFont("Segoe UI", 18, QFont.Bold))
         title.setStyleSheet("color: #2c3e50;")
 
         search_bar = QLineEdit()
         search_bar.setPlaceholderText("Search by title, author, or genre...")
+        search_bar.setFixedHeight(30)
         search_bar.setStyleSheet("""
-            padding: 8px 12px;
-            border-radius: 18px;
-            border: 1px solid #bdc3c7;
-            background-color: white;
-            font-size: 13px;
+            QLineEdit {
+                padding: 5px 12px;
+                border: 1px solid #ccc;
+                border-radius: 15px;
+                background-color: #fff;
+                font-size: 13px;
+            }
         """)
-        search_bar.setMinimumWidth(300)
-        search_bar.setMaximumWidth(400)
+        search_bar.setFixedWidth(300)
 
         header_layout.addWidget(title)
         header_layout.addStretch()
@@ -283,77 +289,63 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(header_container)
 
-        # "Available Books" label
+        # Section Label
         section_label = QLabel("Available Books")
-        section_label.setFont(QFont("Segoe UI", 14))
-        section_label.setStyleSheet("color: #34495e; margin-top: 10px;")
+        section_label.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        section_label.setStyleSheet("color: #34495e;")
         main_layout.addWidget(section_label)
 
-        # Create a flow layout using a grid
-        books_container = QWidget()
-        books_container.setStyleSheet("background-color: white;")
-        grid_layout = QHBoxLayout(books_container)
+        # Scrollable book area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("border: none;")
+
+        scroll_content = QWidget()
+        grid_layout = QGridLayout(scroll_content)
         grid_layout.setSpacing(20)
-
-        scrollArea = QWidget()
-        scroll_layout = QVBoxLayout(scrollArea)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Create a row container that will wrap books
-        flow_container = QWidget()
-        flow_layout = QHBoxLayout(flow_container)
-        flow_layout.setSpacing(15)
-        flow_layout.setAlignment(Qt.AlignLeft)
+        grid_layout.setContentsMargins(10, 10, 10, 10)
 
         if books:
-            book_counter = 0
-            row_limit = 5  # Number of books per row
-
-            for book_id, book_title, author in books:
-                # Create book card
+            for idx, (book_id, book_title, author) in enumerate(books):
                 book_card = QWidget()
-                book_card.setFixedWidth(220)
-                book_card.setMinimumHeight(280)
+                book_card.setFixedSize(200, 270)
                 book_card.setStyleSheet("""
-                    background-color: white;
+                    background-color: #ffffff;
                     border-radius: 8px;
                     border: 1px solid #e0e0e0;
-                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
                 """)
 
                 card_layout = QVBoxLayout(book_card)
                 card_layout.setContentsMargins(0, 0, 0, 0)
+                card_layout.setSpacing(0)
 
-                # Book cover placeholder
+                # Book cover
                 cover = QLabel()
-                cover.setFixedHeight(140)
+                cover.setFixedHeight(100)
                 cover.setStyleSheet(f"""
                     background-color: #{hash(book_title) % 0xffffff:06x};
                     border-top-left-radius: 8px;
                     border-top-right-radius: 8px;
                 """)
+
+                icon = QLabel("📚", alignment=Qt.AlignCenter)
+                icon.setFont(QFont("Arial", 22))
                 cover_layout = QVBoxLayout(cover)
-                cover_layout.setAlignment(Qt.AlignCenter)
+                cover_layout.addWidget(icon)
 
-                book_icon = QLabel("📚")
-                book_icon.setFont(QFont("Arial", 24))
-                book_icon.setStyleSheet("background-color: transparent; color: rgba(255, 255, 255, 0.8);")
-                cover_layout.addWidget(book_icon)
-
-                # Book details
-                details_container = QWidget()
-                details_layout = QVBoxLayout(details_container)
-                details_layout.setContentsMargins(15, 15, 15, 15)
-                details_layout.setSpacing(5)
+                # Info area
+                info_container = QWidget()
+                info_layout = QVBoxLayout(info_container)
+                info_layout.setContentsMargins(10, 10, 10, 10)
+                info_layout.setSpacing(5)
 
                 title_label = QLabel(book_title)
-                title_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+                title_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
                 title_label.setWordWrap(True)
-                title_label.setStyleSheet("color: #333;")
 
                 author_label = QLabel(f"by {author}")
                 author_label.setFont(QFont("Segoe UI", 9))
-                author_label.setStyleSheet("color: #555;")
+                author_label.setStyleSheet("color: #666666;")
                 author_label.setWordWrap(True)
 
                 status_label = QLabel("Available")
@@ -366,10 +358,10 @@ class MainWindow(QMainWindow):
                     QPushButton {
                         background-color: #3498db;
                         color: white;
-                        border-radius: 15px;
-                        padding: 8px;
+                        border-radius: 12px;
+                        padding: 6px;
+                        font-size: 11px;
                         font-weight: bold;
-                        font-size: 10px;
                     }
                     QPushButton:hover {
                         background-color: #2980b9;
@@ -377,38 +369,28 @@ class MainWindow(QMainWindow):
                 """)
                 borrow_btn.clicked.connect(lambda _, b_id=book_id, b_title=book_title: self.borrow_book(b_id, b_title))
 
-                details_layout.addWidget(title_label)
-                details_layout.addWidget(author_label)
-                details_layout.addWidget(status_label)
-                details_layout.addWidget(borrow_btn)
+                info_layout.addWidget(title_label)
+                info_layout.addWidget(author_label)
+                info_layout.addWidget(status_label)
+                info_layout.addStretch()
+                info_layout.addWidget(borrow_btn)
 
                 card_layout.addWidget(cover)
-                card_layout.addWidget(details_container)
+                card_layout.addWidget(info_container)
 
-                flow_layout.addWidget(book_card)
-                book_counter += 1
-
-                # Create a new row after reaching the limit
-                if book_counter % row_limit == 0 and book_counter < len(books):
-                    scroll_layout.addWidget(flow_container)
-                    flow_container = QWidget()
-                    flow_layout = QHBoxLayout(flow_container)
-                    flow_layout.setSpacing(15)
-                    flow_layout.setAlignment(Qt.AlignLeft)
-
-            # Add the last row if it's not empty
-            scroll_layout.addWidget(flow_container)
-
+                row = idx // 4  # 4 books per row
+                col = idx % 4
+                grid_layout.addWidget(book_card, row, col)
         else:
-            empty_label = QLabel("No books are currently available in the library.")
-            empty_label.setStyleSheet("color: #7f8c8d; font-size: 14px; margin: 40px;")
+            empty_label = QLabel("No books are currently available.")
             empty_label.setAlignment(Qt.AlignCenter)
-            scroll_layout.addWidget(empty_label)
+            empty_label.setStyleSheet("color: #999; font-size: 14px; margin: 30px;")
+            grid_layout.addWidget(empty_label, 0, 0)
 
-        grid_layout.addWidget(scrollArea)
-        main_layout.addWidget(books_container, 1)
+        scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(scroll_area)
 
-        # Clear old widgets
+        # Replace existing content
         for i in reversed(range(self.main_panel_layout.count())):
             widget = self.main_panel_layout.itemAt(i).widget()
             if widget:
