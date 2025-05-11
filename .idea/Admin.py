@@ -150,12 +150,7 @@ class BorrowedBookDialog(QDialog):
             'penalty': self.penalty_edit.value(),
             'is_claimed': 1 if self.claimed_checkbox.isChecked() else 0
         }
-            
-    def get_borrowed_data(self):
-        return {
-            'due_date': self.due_date_edit.date().toString("yyyy-MM-dd"),
-            'penalty': self.penalty_edit.value()
-        }
+
 
 
 class MemberDialog(QDialog):
@@ -424,7 +419,7 @@ class AdminDashboard(QWidget):
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, book_id, book_title, due_date, is_claimed FROM borrowed_books")
+        cursor.execute("SELECT id, username, id, book_title, due_date, is_claimed FROM borrowed_books")
         data = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -477,8 +472,10 @@ class AdminDashboard(QWidget):
     def edit_borrowed_book(self, data):
         dialog = BorrowedBookDialog(self, data)
 
+
         if dialog.exec_() == QDialog.Accepted:
             borrowed_data = dialog.get_borrowed_data()
+            print(borrowed_data)
 
             try:
                 with get_db_connection() as conn:
@@ -510,11 +507,11 @@ class AdminDashboard(QWidget):
             cursor = conn.cursor()
             
             # Get book ID first
-            cursor.execute("SELECT book_id FROM borrowed_books WHERE id = %s", (borrow_id,))
-            book_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM borrowed_books WHERE id = %s", (borrow_id,))
+            id = cursor.fetchone()[0]
             
             # Update book availability
-            cursor.execute("UPDATE books SET available = 1 WHERE id = %s", (book_id,))
+            cursor.execute("UPDATE books SET available = 1 WHERE id = %s", (id,))
             
             # Remove borrowed record
             cursor.execute("DELETE FROM borrowed_books WHERE id = %s", (borrow_id,))
@@ -535,7 +532,7 @@ class AdminDashboard(QWidget):
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, username, book_id, book_title, due_date FROM borrowed_books WHERE due_date < %s",
+                "SELECT id, username, id, book_title, due_date FROM borrowed_books WHERE due_date < %s",
                 (today,)
             )
             data = cursor.fetchall()
@@ -601,11 +598,11 @@ class AdminDashboard(QWidget):
             cursor = conn.cursor()
             
             # Get book ID first
-            cursor.execute("SELECT book_id FROM borrowed_books WHERE id = %s", (borrow_id,))
-            book_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM borrowed_books WHERE id = %s", (borrow_id,))
+            id = cursor.fetchone()[0]
             
             # Update book availability
-            cursor.execute("UPDATE books SET available = 1 WHERE id = %s", (book_id,))
+            cursor.execute("UPDATE books SET available = 1 WHERE id = %s", (id,))
             
             # Remove borrowed record
             cursor.execute("DELETE FROM borrowed_books WHERE id = %s", (borrow_id,))
@@ -636,7 +633,7 @@ class AdminDashboard(QWidget):
         cursor.execute("SELECT id, title, author, available FROM books")
         data = cursor.fetchall()
         
-        cursor.execute("SELECT DISTINCT book_id FROM borrowed_books")
+        cursor.execute("SELECT DISTINCT id FROM borrowed_books")
         borrowed_ids = set(row[0] for row in cursor.fetchall())
         cursor.close()
         conn.close()
@@ -713,7 +710,7 @@ class AdminDashboard(QWidget):
             QMessageBox.information(self, "Success", "Book updated successfully!")
             self.view_all_books()
     
-    def delete_book(self, book_id):
+    def delete_book(self, id):
         reply = QMessageBox.question(
             self, 
             "Confirm Deletion", 
@@ -726,7 +723,7 @@ class AdminDashboard(QWidget):
             cursor = conn.cursor()
             
             # Check if book is borrowed
-            cursor.execute("SELECT COUNT(*) FROM borrowed_books WHERE book_id = %s", (book_id,))
+            cursor.execute("SELECT COUNT(*) FROM borrowed_books WHERE id = %s", (id,))
             if cursor.fetchone()[0] > 0:
                 QMessageBox.warning(
                     self, 
@@ -737,7 +734,7 @@ class AdminDashboard(QWidget):
                 conn.close()
                 return
             
-            cursor.execute("DELETE FROM books WHERE id = %s", (book_id,))
+            cursor.execute("DELETE FROM books WHERE id = %s", (id,))
             conn.commit()
             cursor.close()
             conn.close()
