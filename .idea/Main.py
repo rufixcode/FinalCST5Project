@@ -413,7 +413,7 @@ class MainWindow(QMainWindow):
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            due_date = (datetime.now() + timedelta(days=14)).strftime('%Y-%m-%d')
+            due_date = (datetime.now() + timedelta(minutes=1)).strftime('%Y-%m-%d %H:%M:%S')
 
             # Insert into DB
             cursor.execute("""

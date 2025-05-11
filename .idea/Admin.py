@@ -50,7 +50,22 @@ TABLE_STYLE = """
 def get_db_connection():
     return mysql.connector.connect(host="localhost", user="root", password="", database="librarydb")
 
-
+class StyledLineEdit(QLineEdit):
+    def __init__(self, placeholder=""):
+        super().__init__()
+        self.setPlaceholderText(placeholder)
+        self.setFixedHeight(40)
+        self.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                padding: 0 10px;
+                font-size: 14px;
+            }
+            QLineEdit:focus {
+                border-color: #6c63ff;
+            }
+        """)
 class BookDialog(QDialog):
     def __init__(self, parent=None, book_data=None):
         super().__init__(parent)
@@ -257,41 +272,59 @@ class AdminLogin(QWidget):
     def __init__(self, admin_window):
         super().__init__()
         self.admin_window = admin_window
-        layout = QVBoxLayout()
 
+        # Main layout
+        main_layout = QVBoxLayout()
+        form_container = QWidget()
+        form_layout = QVBoxLayout(form_container)
+        form_layout.setContentsMargins(40, 40, 40, 40)
+        form_layout.setSpacing(12)
+        form_container.setMaximumWidth(500)
+
+        # Title
         self.title = QLabel("Admin Login")
-        self.title.setFont(QFont("Arial", 18, QFont.Bold))
+        self.title.setFont(QFont("Arial", 16, QFont.Bold))
         self.title.setAlignment(Qt.AlignCenter)
+        form_layout.addWidget(self.title)
 
-        self.username = QLineEdit()
-        self.username.setPlaceholderText("Username")
+        # Username
+        self.username = StyledLineEdit("Username")  # Match LoginPage field
+        form_layout.addWidget(self.username)
 
-        self.password = QLineEdit()
-        self.password.setPlaceholderText("Password")
+        # Password
+        self.password = StyledLineEdit("Password")
         self.password.setEchoMode(QLineEdit.Password)
+        form_layout.addWidget(self.password)
 
+        # Optional: Show password checkbox
+        self.show_password = QCheckBox("Show Password")
+        self.show_password.stateChanged.connect(self.toggle_password_visibility)
+        form_layout.addWidget(self.show_password)
+
+        # Login button
         self.login_btn = QPushButton("Login")
         self.login_btn.clicked.connect(self.admin_login)
-        self.login_btn.setStyleSheet(BUTTON_STYLE)
+        form_layout.addWidget(self.login_btn)
 
-        form = QVBoxLayout()
-        form.setAlignment(Qt.AlignCenter)
-        form.setSpacing(10)
-        form.addWidget(self.title)
-        form.addWidget(self.username)
-        form.addWidget(self.password)
-        form.addWidget(self.login_btn)
+        # Center horizontally
+        h_layout = QHBoxLayout()
+        h_layout.addStretch(1)
+        h_layout.addWidget(form_container)
+        h_layout.addStretch(1)
 
-        wrapper = QHBoxLayout()
-        wrapper.addStretch()
-        wrapper.addLayout(form)
-        wrapper.addStretch()
+        # Center vertically
+        main_layout.addStretch(1)
+        main_layout.addLayout(h_layout)
+        main_layout.addStretch(1)
 
-        layout.addStretch()
-        layout.addLayout(wrapper)
-        layout.addStretch()
+        self.setLayout(main_layout)
 
-        self.setLayout(layout)
+    def toggle_password_visibility(self, state):
+        if state == Qt.Checked:
+            self.password.setEchoMode(QLineEdit.Normal)
+        else:
+            self.password.setEchoMode(QLineEdit.Password)
+
 
     def admin_login(self):
         user = self.username.text().strip()
@@ -496,72 +529,92 @@ class AdminDashboard(QWidget):
 
 
     def return_book(self, borrow_id):
-        reply = QMessageBox.question(
-            self, "Confirm Return", 
-            "Are you sure you want to mark this book as returned?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
+        try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            
-            # Get book ID first
-            cursor.execute("SELECT id FROM borrowed_books WHERE id = %s", (borrow_id,))
-            id = cursor.fetchone()[0]
-            
-            # Update book availability
-            cursor.execute("UPDATE books SET available = 1 WHERE id = %s", (id,))
-            
-            # Remove borrowed record
+
+            # Check if the book is claimed
+            cursor.execute("SELECT is_claimed FROM borrowed_books WHERE id = %s", (borrow_id,))
+            result = cursor.fetchone()
+
+            if not result:
+                QMessageBox.warning(self, "Warning", "Borrow record not found.")
+                return
+
+            is_claimed = result[0]
+
+            # If not claimed, ask for confirmation
+            if not is_claimed:
+                reply = QMessageBox.question(
+                    self, "Not Claimed",
+                    "This book has not been claimed yet. Are you sure you want to return it?",
+                    QMessageBox.Yes | QMessageBox.No
+                )
+                if reply != QMessageBox.Yes:
+                    return
+
+            # Proceed to delete the record
             cursor.execute("DELETE FROM borrowed_books WHERE id = %s", (borrow_id,))
-            
             conn.commit()
             cursor.close()
             conn.close()
-            
+
             QMessageBox.information(self, "Success", "Book has been returned successfully!")
             self.view_borrowed()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to return book: {e}")
+
+
 
     def view_overdue(self):
         self.page_title.setText("Overdue Books")
         self.clear_action_buttons()
 
         try:
-            today = datetime.today().strftime('%Y-%m-%d')
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, username, id, book_title, due_date FROM borrowed_books WHERE due_date < %s",
-                (today,)
+                "SELECT id, username, book_id, book_title, due_date FROM borrowed_books WHERE due_date < %s",
+                (now,)
             )
             data = cursor.fetchall()
             cursor.close()
             conn.close()
 
+            # Define headers for 8 columns
             headers = ["ID", "User", "Book ID", "Overdue Book", "Due Date", "Days Overdue", "Est. Penalty", "Actions"]
             self.table.setSortingEnabled(False)
             self.table.clearContents()
             self.table.setRowCount(len(data))
-            self.table.setColumnCount(len(headers))
+            self.table.setColumnCount(len(headers))  # Set column count to 8
             self.table.setHorizontalHeaderLabels(headers)
 
-            today_date = datetime.today()
+            current_time = datetime.now()
 
             for i, row in enumerate(data):
-                for j in range(5):
+                for j in range(5):  # Loop over the first 6 columns
                     self.table.setItem(i, j, QTableWidgetItem(str(row[j])))
 
                 # Calculate days overdue
-                due_date = datetime.strptime(str(row[4]), "%Y-%m-%d")
-                days_overdue = (today_date - due_date).days
-                self.table.setItem(i, 5, QTableWidgetItem(str(days_overdue)))
+                due_datetime = datetime.strptime(str(row[4]), "%Y-%m-%d %H:%M:%S")
+                time_overdue = current_time - due_datetime
+                if time_overdue.days > 0:
+                    overdue_display = f"{time_overdue.days}"
+                else:
+                    minutes = int(time_overdue.total_seconds() // 60)
+                    overdue_display = f"{minutes} mins"
 
-                # Calculate penalty ($0.50 per day)
-                penalty = days_overdue * 0.5
-                self.table.setItem(i, 6, QTableWidgetItem(f"${penalty:.2f}"))
 
-                # Add action buttons
+                self.table.setItem(i, 5, QTableWidgetItem(overdue_display))
+
+
+            # Calculate penalty ($0.50 per day)
+                penalty = max(0.5, time_overdue.total_seconds() / 86400 * 0.5)  # 86400 secs in a day
+                self.table.setItem(i, 6, QTableWidgetItem(f"${penalty:.2f}"))# Column 6 is "Est. Penalty"
+
+                # Add action buttons in the last column (column index 7)
                 edit_btn = QPushButton("Edit")
                 edit_btn.setStyleSheet(BUTTON_STYLE)
                 edit_btn.clicked.connect(partial(self.edit_borrowed_book, row))
@@ -577,102 +630,118 @@ class AdminDashboard(QWidget):
                 action_layout.addWidget(collect_btn)
                 action_widget.setLayout(action_layout)
 
-                self.table.setCellWidget(i, 7, action_widget)
+                self.table.setCellWidget(i, 7, action_widget)  # Column 7 for actions
 
             self.table.resizeColumnsToContents()
             self.table.resizeRowsToContents()
             self.table.setSortingEnabled(True)
         except mysql.connector.Error as e:
             QMessageBox.critical(self, "Database Error", f"Error displaying overdue books: {e}")
-    
+
+
     def collect_and_return(self, borrow_id, penalty):
         reply = QMessageBox.question(
-            self, 
-            "Confirm Collection", 
+            self,
+            "Confirm Collection",
             f"Collect ${penalty:.2f} penalty and mark as returned?",
             QMessageBox.Yes | QMessageBox.No
         )
-        
+
         if reply == QMessageBox.Yes:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Get book ID first
-            cursor.execute("SELECT id FROM borrowed_books WHERE id = %s", (borrow_id,))
-            id = cursor.fetchone()[0]
-            
-            # Update book availability
-            cursor.execute("UPDATE books SET available = 1 WHERE id = %s", (id,))
-            
-            # Remove borrowed record
-            cursor.execute("DELETE FROM borrowed_books WHERE id = %s", (borrow_id,))
-            
-            conn.commit()
-            cursor.close()
-            conn.close()
-            
-            QMessageBox.information(
-                self, 
-                "Success", 
-                f"Penalty of ${penalty:.2f} collected and book has been returned!"
-            )
-            self.view_overdue()
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+
+                # Get the correct book_id for updating book availability
+                cursor.execute("SELECT id FROM borrowed_books WHERE id = %s", (borrow_id,))
+                result = cursor.fetchone()
+                if result:
+                    book_id = result[0]
+
+
+                    # Remove borrowed record
+                    cursor.execute("DELETE FROM borrowed_books WHERE id = %s", (borrow_id,))
+
+                    conn.commit()
+
+                    QMessageBox.information(
+                        self,
+                        "Success",
+                        f"Penalty of ${penalty:.2f} collected and book has been returned!"
+                    )
+                    self.view_overdue()
+                else:
+                    QMessageBox.warning(self, "Error", "Borrowed record not found.")
+
+            except Exception as e:
+                QMessageBox.critical(self, "Database Error", f"Error returning book: {e}")
+            finally:
+                cursor.close()
+                conn.close()
+
 
     def view_all_books(self):
         self.page_title.setText("All Books")
         self.clear_action_buttons()
-        
+
         # Add book button
         add_book_btn = QPushButton("Add Book")
         add_book_btn.setStyleSheet(BUTTON_STYLE)
         add_book_btn.clicked.connect(self.add_book)
         self.action_buttons.addWidget(add_book_btn)
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, title, author, available FROM books")
-        data = cursor.fetchall()
-        
-        cursor.execute("SELECT DISTINCT id FROM borrowed_books")
+
+        # Fetch all books
+        cursor.execute("SELECT id, title, author FROM books")
+        books = cursor.fetchall()
+
+        # Fetch borrowed book_ids
+        cursor.execute("SELECT DISTINCT book_id FROM borrowed_books")
         borrowed_ids = set(row[0] for row in cursor.fetchall())
+
         cursor.close()
         conn.close()
-        
+
         headers = ["ID", "Title", "Author", "Available", "Actions"]
-        self.table.setRowCount(len(data))
+        self.table.setRowCount(len(books))
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
 
-        for i, row in enumerate(data):
-            for j in range(4):
-                if j == 3:  # Available column
-                    status = "Yes" if row[j] == 1 else "No"
-                    self.table.setItem(i, j, QTableWidgetItem(status))
-                else:
-                    self.table.setItem(i, j, QTableWidgetItem(str(row[j])))
-            
-            # Add action buttons
+        for i, book in enumerate(books):
+            book_id, title, author = book
+
+            is_available = "No" if book_id in borrowed_ids else "Yes"
+
+            self.table.setItem(i, 0, QTableWidgetItem(str(book_id)))
+            self.table.setItem(i, 1, QTableWidgetItem(title))
+            self.table.setItem(i, 2, QTableWidgetItem(author))
+            self.table.setItem(i, 3, QTableWidgetItem(is_available))
+
+            # Action buttons
             action_layout = QHBoxLayout()
             action_layout.setContentsMargins(0, 0, 0, 0)
             action_layout.setSpacing(5)
-            
+
             edit_btn = QPushButton("Edit")
             edit_btn.setStyleSheet(BUTTON_STYLE)
-            edit_btn.clicked.connect(lambda _, idx=i, data=row: self.edit_book(data))
-            
+            edit_btn.clicked.connect(lambda _, data=book: self.edit_book(data))
+
             delete_btn = QPushButton("Delete")
             delete_btn.setStyleSheet(BUTTON_STYLE)
-            delete_btn.clicked.connect(lambda _, idx=i, id=row[0]: self.delete_book(id))
-            
+            delete_btn.clicked.connect(lambda _, id=book_id: self.delete_book(id))
+
             action_layout.addWidget(edit_btn)
             action_layout.addWidget(delete_btn)
-            
+
             action_widget = QWidget()
             action_widget.setLayout(action_layout)
             self.table.setCellWidget(i, 4, action_widget)
-        
+
         self.table.resizeColumnsToContents()
         self.table.resizeRowsToContents()
+
 
     def add_book(self):
         dialog = BookDialog(self)
@@ -682,8 +751,8 @@ class AdminDashboard(QWidget):
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO books (title, author, available) VALUES (%s, %s, %s)",
-                (book_data['title'], book_data['author'], book_data['available'])
+                "INSERT INTO books (title, author) VALUES (%s, %s)",
+                (book_data['title'], book_data['author'])
             )
             conn.commit()
             cursor.close()
