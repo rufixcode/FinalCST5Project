@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton,
     QMessageBox, QStackedWidget, QLabel, QHBoxLayout, QCheckBox,
-    QMainWindow, QScrollArea, QFrame, QSizePolicy, QGridLayout
+    QMainWindow, QScrollArea, QFrame, QSizePolicy, QGridLayout, QDialog, QTextEdit
 )
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtCore import Qt, QSize
@@ -410,43 +410,42 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Success", "Logout successful!")
 
     def borrow_book(self, book_id, book_title):
-
-        try:
-            output = subprocess.check_output(["CheckBookAvailability.exe", str(book_id)], shell=True)
-            status = output.decode("utf-8").strip()
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to check availability: {e}")
-            return
-
-        if status == "Borrowed":
-            QMessageBox.information(self, "Unavailable", f"'{book_title}' is already borrowed.")
-            return
-
-        # Proceed with borrowing
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
             due_date = (datetime.now() + timedelta(days=14)).strftime('%Y-%m-%d')
+
+            # Insert into DB
             cursor.execute("""
                 INSERT INTO borrowed_books (username, book_id, book_title, due_date)
                 VALUES (%s, %s, %s, %s)
             """, (self.current_user, book_id, book_title, due_date))
             conn.commit()
-            QMessageBox.information(self, "Success", f"You borrowed '{book_title}'. Due on {due_date}.")
+
+            # Inform user
+            QMessageBox.information(
+                self, 
+                "Book Borrowed", 
+                f"✅ You borrowed '{book_title}'.\n📅 Due on: {due_date}.\n\n📌 Please claim the book at the library front desk."
+            )
+
+            # Generate receipt dialog
+            self.show_receipt_dialog(book_title, due_date)
+
             self.show_home()
+
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
         finally:
             cursor.close()
             conn.close()
 
-
     def show_borrowed_books(self):
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT book_title, due_date FROM borrowed_books
+                SELECT book_title, due_date, is_claimed FROM borrowed_books
                 WHERE username = %s
             """, (self.current_user,))
             books = cursor.fetchall()
@@ -458,10 +457,18 @@ class MainWindow(QMainWindow):
             layout.setContentsMargins(30, 30, 30, 30)
             layout.setSpacing(20)
 
-            # Header
+            # Header with gradient background
             header = QLabel("📚 Borrowed Books")
-            header.setFont(QFont("Georgia", 22, QFont.Bold))
-            header.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
+            header.setFont(QFont("Georgia", 24, QFont.Bold))
+            header.setStyleSheet("""
+                QLabel {
+                    color: white;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6dd5ed, stop:1 #2193b0);
+                    padding: 15px;
+                    border-radius: 12px;
+                }
+            """)
+            header.setAlignment(Qt.AlignCenter)
             layout.addWidget(header)
 
             # Scroll Area
@@ -472,26 +479,30 @@ class MainWindow(QMainWindow):
             scroll_content = QWidget()
             scroll_layout = QVBoxLayout(scroll_content)
             scroll_layout.setSpacing(15)
-            scroll_layout.setContentsMargins(0, 0, 0, 0)
+            scroll_layout.setContentsMargins(0, 10, 0, 0)
 
             # Book Cards
             if books:
-                for title, due_date in books:
+                for title, due_date, is_claimed in books:
                     card = QFrame()
                     card.setStyleSheet("""
                         QFrame {
-                            background-color: #ffffff;
-                            border-radius: 10px;
-                            border: 1px solid #dcdcdc;
+                            background-color: #fdfefe;
+                            border-radius: 12px;
+                            border: 1px solid #ecf0f1;
                             padding: 12px;
+                            box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.05);
+                        }
+                        QFrame:hover {
+                            background-color: #f0f8ff;
                         }
                     """)
                     card_layout = QHBoxLayout(card)
-                    card_layout.setContentsMargins(10, 5, 10, 5)
-                    card_layout.setSpacing(15)
+                    card_layout.setContentsMargins(15, 8, 15, 8)
+                    card_layout.setSpacing(20)
 
                     icon = QLabel("📖")
-                    icon.setFont(QFont("Arial", 20))
+                    icon.setFont(QFont("Arial", 24))
                     icon.setFixedWidth(40)
 
                     info_layout = QVBoxLayout()
@@ -501,8 +512,16 @@ class MainWindow(QMainWindow):
                     due_label.setFont(QFont("Segoe UI", 9))
                     due_label.setStyleSheet("color: #e67e22;")
 
+                    # Add claimed status
+                    claimed_status = "Claimed" if is_claimed else "Not Claimed"
+                    claimed_color = "#27ae60" if is_claimed else "#3498db"
+                    claimed_label = QLabel(claimed_status)
+                    claimed_label.setFont(QFont("Segoe UI", 9, QFont.Bold))
+                    claimed_label.setStyleSheet(f"color: {claimed_color}; padding: 3px 8px; background-color: #f8f9fa; border-radius: 4px;")
+
                     info_layout.addWidget(title_label)
                     info_layout.addWidget(due_label)
+                    info_layout.addWidget(claimed_label)
 
                     card_layout.addWidget(icon)
                     card_layout.addLayout(info_layout)
@@ -510,17 +529,17 @@ class MainWindow(QMainWindow):
 
                     scroll_layout.addWidget(card)
             else:
-                empty_msg = QLabel("You haven’t borrowed any books yet.\nExplore the catalog and start reading!")
+                empty_msg = QLabel("😔 You haven't borrowed any books yet.\nExplore the catalog and start reading!")
                 empty_msg.setFont(QFont("Segoe UI", 12))
                 empty_msg.setAlignment(Qt.AlignCenter)
-                empty_msg.setStyleSheet("color: #7f8c8d; padding: 40px;")
+                empty_msg.setStyleSheet("color: #7f8c8d; padding: 60px;")
                 scroll_layout.addWidget(empty_msg)
 
             scroll_content.setLayout(scroll_layout)
             scroll_area.setWidget(scroll_content)
             layout.addWidget(scroll_area)
 
-            # Replace existing panel
+            # Replace main content
             if self.main_panel_layout is not None:
                 for i in reversed(range(self.main_panel_layout.count())):
                     widget = self.main_panel_layout.itemAt(i).widget()
@@ -528,8 +547,10 @@ class MainWindow(QMainWindow):
                         widget.setParent(None)
 
             self.main_panel_layout.addWidget(book_panel)
+
         except Exception as e:
             print(f"[error] failed to show books : {e}")
+
 
 
     def get_borrowed_books(self, username):
@@ -544,6 +565,43 @@ class MainWindow(QMainWindow):
         cursor.close()
         conn.close()
         return books
+    
+    def show_receipt_dialog(self, book_title, due_date):
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Borrow Receipt")
+            dialog.resize(400, 300)
+
+            layout = QVBoxLayout(dialog)
+
+            receipt_text = QTextEdit()
+            receipt_text.setReadOnly(True)
+            receipt_text.setStyleSheet("font-family: Consolas; font-size: 12pt; background-color: #f9f9f9; padding: 10px;")
+            
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            receipt_content = f"""
+        ========= LIBRARY RECEIPT =========
+
+        Username  : {self.current_user}
+        Book Title: {book_title}
+        Date      : {now_str}
+        Due Date  : {due_date}
+
+        📌 Please present this receipt
+        when claiming your book at the
+        library front desk.
+
+        Thank you for using our library!
+
+        ===================================
+        """
+            receipt_text.setText(receipt_content.strip())
+            layout.addWidget(receipt_text)
+
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dialog.accept)
+            layout.addWidget(close_btn)
+
+            dialog.exec_()
 
     def Main_screen(self):
         # Top navigation bar

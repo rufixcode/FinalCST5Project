@@ -15,6 +15,7 @@ from functools import partial
 from PyQt5.QtGui import QRegExpValidator
 from PyQt5.QtCore import QRegExp
 from PyQt5.QtCore import QTimer
+from datetime import date
 
 # Consistent styling
 BUTTON_STYLE = """
@@ -111,10 +112,14 @@ class BorrowedBookDialog(QDialog):
         self.penalty_edit.setSingleStep(0.5)
         self.penalty_edit.setPrefix("$")
         
+        # Add claimed checkbox
+        self.claimed_checkbox = QCheckBox("Book Claimed")
+        
         layout.addRow("Username:", self.username_edit)
         layout.addRow("Book Title:", self.book_title_edit)
         layout.addRow("Due Date:", self.due_date_edit)
         layout.addRow("Penalty:", self.penalty_edit)
+        layout.addRow("Status:", self.claimed_checkbox)
         
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -126,7 +131,25 @@ class BorrowedBookDialog(QDialog):
             self.borrow_id = borrowed_data[0]
             self.username_edit.setText(borrowed_data[1])
             self.book_title_edit.setText(borrowed_data[3])
-            self.due_date_edit.setDate(QDate.fromString(borrowed_data[4], "yyyy-MM-dd"))
+
+            due_date = borrowed_data[4]
+            if isinstance(due_date, date):
+                qdate = QDate(due_date.year, due_date.month, due_date.day)
+            else:
+                qdate = QDate.fromString(str(due_date), "yyyy-MM-dd")
+
+            self.due_date_edit.setDate(qdate)
+            
+            # Set claimed status if it's available in the data (position 5)
+            if len(borrowed_data) > 5:
+                self.claimed_checkbox.setChecked(borrowed_data[5] == 1)
+            
+    def get_borrowed_data(self):
+        return {
+            'due_date': self.due_date_edit.date().toString("yyyy-MM-dd"),
+            'penalty': self.penalty_edit.value(),
+            'is_claimed': 1 if self.claimed_checkbox.isChecked() else 0
+        }
             
     def get_borrowed_data(self):
         return {
@@ -401,12 +424,12 @@ class AdminDashboard(QWidget):
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, book_id, book_title, due_date FROM borrowed_books")
+        cursor.execute("SELECT id, username, book_id, book_title, due_date, is_claimed FROM borrowed_books")
         data = cursor.fetchall()
         cursor.close()
         conn.close()
         
-        headers = ["ID", "User", "Book ID", "Book Title", "Due Date", "Actions"]
+        headers = ["ID", "User", "Book ID", "Book Title", "Due Date", "Claimed", "Actions"]
         self.table.setSortingEnabled(False)
         self.table.clearContents()
         self.table.setRowCount(len(data))
@@ -417,6 +440,15 @@ class AdminDashboard(QWidget):
         for i, row in enumerate(data):
             for j in range(5):
                 self.table.setItem(i, j, QTableWidgetItem(str(row[j])))
+            
+            # Add claimed status
+            claimed_status = "Yes" if row[5] == 1 else "No"
+            claimed_item = QTableWidgetItem(claimed_status)
+            if row[5] == 1:
+                claimed_item.setForeground(QColor("green"))
+            else:
+                claimed_item.setForeground(QColor("blue"))
+            self.table.setItem(i, 5, claimed_item)
 
             from functools import partial
             
@@ -435,12 +467,11 @@ class AdminDashboard(QWidget):
             action_layout.addWidget(return_btn)
             action_widget.setLayout(action_layout)
 
-            self.table.setCellWidget(i, 5, action_widget)
+            self.table.setCellWidget(i, 6, action_widget)
 
             self.table.resizeColumnsToContents()
             self.table.resizeRowsToContents()
             self.table.setSortingEnabled(True)
-            
 
     
     def edit_borrowed_book(self, data):
@@ -450,21 +481,18 @@ class AdminDashboard(QWidget):
             borrowed_data = dialog.get_borrowed_data()
 
             try:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                    "UPDATE borrowed_books SET due_date = %s, is_claimed = %s WHERE id = %s",
+                    (borrowed_data['due_date'], borrowed_data['is_claimed'], data[0])
+                    )
+                    conn.commit()
 
-              with get_db_connection() as conn:
-                  cursor = conn.cursor()
-                  cursor.execute(
-                   "UPDATE borrowed_books SET due_date = %s WHERE id = %s",
-                    (borrowed_data['due_date'], data[0])
-                  )
-                  conn.commit()
-
-
-
-              QMessageBox.information(self, "Success", "Borrowed book updated successfully!")
-              self.view_borrowed()
+                QMessageBox.information(self, "Success", "Borrowed book updated successfully!")
+                self.view_borrowed()
             except Exception as e:
-              QMessageBox.critical(self, "Error", f"Failed to update borrowed book: {e}")
+                QMessageBox.critical(self, "Error", f"Failed to update borrowed book: {e}")
 
 
 
@@ -879,21 +907,21 @@ class AdminDashboard(QWidget):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT book_title, due_date FROM borrowed_books WHERE username = %s", 
+            "SELECT book_title, due_date, is_claimed FROM borrowed_books WHERE username = %s", 
             (username,)
         )
         data = cursor.fetchall()
         cursor.close()
         conn.close()
         
-        headers = ["Book Title", "Due Date", "Status"]
+        headers = ["Book Title", "Due Date", "Status", "Claimed"]
         table.setColumnCount(len(headers))
         table.setHorizontalHeaderLabels(headers)
         table.setRowCount(len(data))
         
         today = datetime.today().date()
         
-        for i, (title, due_date) in enumerate(data):
+        for i, (title, due_date, is_claimed) in enumerate(data):
             table.setItem(i, 0, QTableWidgetItem(title))
             table.setItem(i, 1, QTableWidgetItem(str(due_date)))
             
@@ -911,6 +939,15 @@ class AdminDashboard(QWidget):
             else:
                 status_item.setForeground(QColor("green"))
             table.setItem(i, 2, status_item)
+            
+            # Add claimed status
+            claimed_status = "Yes" if is_claimed == 1 else "No"
+            claimed_item = QTableWidgetItem(claimed_status)
+            if is_claimed == 1:
+                claimed_item.setForeground(QColor("green"))
+            else:
+                claimed_item.setForeground(QColor("blue"))
+            table.setItem(i, 3, claimed_item)
         
         table.resizeColumnsToContents()
         layout.addWidget(table)
