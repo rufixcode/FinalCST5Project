@@ -39,3 +39,5 @@ MariaDB [librarydb]> CREATE TABLE admins (
     ->     username VARCHAR(100) NOT NULL UNIQUE,
     ->     password VARCHAR(100) NOT NULL
     -> );
+
+ ALTER TABLE borrowed_books ADD COLUMN is_claimed BOOLEAN DEFAULT FALSE;
